@@ -105,6 +105,9 @@ const (
 	prefixedNodeExpandSecretNameKey      = csiParameterPrefix + "node-expand-secret-name"
 	prefixedNodeExpandSecretNamespaceKey = csiParameterPrefix + "node-expand-secret-namespace"
 
+	prefixedControllerModifySecretNameKey      = csiParameterPrefix + "controller-modify-secret-name"
+	prefixedControllerModifySecretNamespaceKey = csiParameterPrefix + "controller-modify-secret-namespace"
+
 	// [Deprecated] CSI Parameters that are put into fields but
 	// NOT stripped from the parameters passed to CreateVolume
 	provisionerSecretNameKey      = "csiProvisionerSecretName"
@@ -204,6 +207,12 @@ var (
 		name:               "NodeExpand",
 		secretNameKey:      prefixedNodeExpandSecretNameKey,
 		secretNamespaceKey: prefixedNodeExpandSecretNamespaceKey,
+	}
+
+	controllerModifySecretParams = secretParamsMap{
+		name:               "ControllerModify",
+		secretNameKey:      prefixedControllerModifySecretNameKey,
+		secretNamespaceKey: prefixedControllerModifySecretNamespaceKey,
 	}
 )
 
@@ -739,6 +748,7 @@ func (p *csiProvisioner) prepareProvision(ctx context.Context, claim *v1.Persist
 	if err != nil {
 		return nil, controller.ProvisioningNoChange, err
 	}
+	// TODO: add ControllerModifySecretRef
 	csiPVSource := &v1.CSIPersistentVolumeSource{
 		Driver: p.driverName,
 		// VolumeHandle and VolumeAttributes will be added after provisioning.
@@ -868,6 +878,13 @@ func (p *csiProvisioner) Provision(ctx context.Context, options controller.Provi
 		klog.V(3).Infof("create volume rep: %+v", rep.Volume)
 	}
 	volumeAttributes := map[string]string{provisionerIDKey: p.identity}
+	modifySecretName := req.GetParameters()[prefixedControllerModifySecretNameKey]
+	modifySecretNamespace := req.GetParameters()[prefixedControllerModifySecretNamespaceKey]
+	if modifySecretName != "" && modifySecretNamespace != "" {
+		volumeAttributes[prefixedControllerModifySecretNameKey] = modifySecretName
+		volumeAttributes[prefixedControllerModifySecretNamespaceKey] = modifySecretNamespace
+	}
+
 	maps.Copy(volumeAttributes, rep.Volume.VolumeContext)
 	respCap := rep.GetVolume().GetCapacityBytes()
 
@@ -1030,6 +1047,11 @@ func removePrefixedParameters(param map[string]string) (map[string]string, error
 			case prefixedDefaultSecretNamespaceKey:
 			case prefixedNodeExpandSecretNameKey:
 			case prefixedNodeExpandSecretNamespaceKey:
+			// exception for ControllerModify, not part of CSIPersistentVolumeSource yet
+			case prefixedControllerModifySecretNameKey:
+				fallthrough
+			case prefixedControllerModifySecretNamespaceKey:
+				newParam[k] = v
 			default:
 				return map[string]string{}, fmt.Errorf("found unknown parameter key \"%s\" with reserved namespace %s", k, csiParameterPrefix)
 			}
